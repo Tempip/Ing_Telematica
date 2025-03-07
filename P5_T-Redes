@@ -78,13 +78,16 @@ public class FlowPathUnicast implements IAlgorithm
 		//PASO 7 ESTABLECER FUNCION OBJETIVO DEL PROBLEMA -->SUMATORIO DE (x_p * l_p)
 			
 			//PRIMERO NECESITAREMOS l_p --> INTRODUCIR COMO PARAMETRO DE ENTRADA 
-			
+			/* OPCION 1 y 2 IMPORTANTES PAR EXMAN!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			 * si me dice de poner una funcion objetivo con lp [5 7 5 ....]y xp[0 5 0 5 0 0. ...]
+			 * para hacer el sum(xp*lp) uno tiene que ser fila y otro columna
+			 */
 			op.setInputParameter("l_p", netPlan.getVectorRouteNumberOfLinks(), "row");
 			
 			//AHORA YA PODEMOS ESTABLECER LA FUNCION OBJETIVO -->SUMATORIO DE (x_p * l_p)
 			
-			// op.setObjectiveFunction("minimize", " sum(x_p * l_p)" );    //opción 1 
-			op.setObjectiveFunction("minimize", " l_p *  x_p" );   //opción 2 (traspuesta)
+			// op.setObjectiveFunction("minimize", " sum(x_p .* l_p)" );    //opción 1 
+			op.setObjectiveFunction("minimize", " (l_p *  x_p') " );   //opción 2 (el simbolo " ' " hace la traspuesta para que sea fila por columna )
 			
 			
 		//PASO 8 AÑADIR LAS RESTRCCIONES USANDO UN BUCLE FOR CON UNA ITERACION POR DEMANDA (SATISFACER EL TRAFICO DE CADA DEMANDA)
