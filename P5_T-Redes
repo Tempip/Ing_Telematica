@@ -1,0 +1,188 @@
+//PRACTICA 5 T_REDES
+package trt.year202021.template;
+
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+import com.jom.OptimizationProblem;
+import com.net2plan.interfaces.networkDesign.Demand;
+import com.net2plan.interfaces.networkDesign.IAlgorithm;
+import com.net2plan.interfaces.networkDesign.Link;
+import com.net2plan.interfaces.networkDesign.Net2PlanException;
+import com.net2plan.interfaces.networkDesign.NetPlan;
+import com.net2plan.interfaces.networkDesign.Route;
+import com.net2plan.libraries.GraphUtils;
+import com.net2plan.utils.Triple;
+
+/** This is a template to be used in the lab work, a starting point for the students to develop their programs
+ * 
+ */
+public class FlowPathUnicast implements IAlgorithm
+{
+	
+	/** The method called by Net2Plan to run the algorithm (when the user presses the "Execute" button)
+	 * @param netPlan The input network design. The developed algorithm should modify it: it is the way the new design is returned
+	 * @param algorithmParameters Pair name-value for the current value of the input parameters
+	 * @param net2planParameters Pair name-value for some general parameters of Net2Plan
+	 * @return
+	 */
+	@Override
+	public String executeAlgorithm(NetPlan netPlan, Map<String, String> algorithmParameters, Map<String, String> net2planParameters)
+	{
+		/* Typically, you start reading the input parameters */
+		
+		//PASO 2 RECUPERACION DE PARAMETROS DE ENTRADA 
+		
+		//String firstParamName = algorithmParameters.get ("firstParamName");
+		final int  k = Integer.parseInt (algorithmParameters.get ("k")); // if you expect a Double, you have to make the conversion
+		
+		//PASO 3 ELIMINAR TODAS LAS RUTAS EXISTENTES DEL DISEÃ‘O DE ENTRADA
+		
+		netPlan.removeAllRoutes();
+		
+		
+		//PASO 4 PARA CADA DEMANDA CALCULAR LOS K CAMINOS MAS CORTOS SIN BUCLES 
+		
+		for (Demand d: netPlan.getDemands()) {
+			
+			
+			List<List<Link>>  kshortestpaths = 
+					GraphUtils.getKLooplessShortestPaths(netPlan.getNodes(), netPlan.getLinks(), d.getIngressNode(), 
+														d.getEgressNode(), null, k, -56, -99, -8270487, -19, -15, -20);
+			
+			
+			//SI NO HAY CAMINOS --> LANZAMOS EXCEPCION 
+			
+			if (kshortestpaths.isEmpty() == true)
+				throw new Net2PlanException ("No hay camino mas corto para una demanda");
+			
+			//METER EN netPlan ESAS RUTAS ASOCIADAS A SI CORRESPONDIENTE DEMANDA 
+			else {
+			
+			for (List<Link> sequenceOfLinks: kshortestpaths)
+			
+			netPlan.addRoute(d, 0, 0, sequenceOfLinks, null);
+		} 
+		}
+		
+		//JOM
+		//PASO 5 CREAR EL OBJETO DEL PROBLEMA DE OPTIMIZACION 
+			
+			OptimizationProblem op = new OptimizationProblem();
+			
+		//PASO 6 AÑADIR VARIABLES DE DECISION DEL PROBLEMA x_p
+			
+			op.addDecisionVariable("x_p", false, new int [] {1, netPlan.getNumberOfRoutes()}, 0, Double.MAX_VALUE);
+			
+		//PASO 7 ESTABLECER FUNCION OBJETIVO DEL PROBLEMA -->SUMATORIO DE (x_p * l_p)
+			
+			//PRIMERO NECESITAREMOS l_p --> INTRODUCIR COMO PARAMETRO DE ENTRADA 
+			
+			op.setInputParameter("l_p", netPlan.getVectorRouteNumberOfLinks(), "row");
+			
+			//AHORA YA PODEMOS ESTABLECER LA FUNCION OBJETIVO -->SUMATORIO DE (x_p * l_p)
+			
+			// op.setObjectiveFunction("minimize", " sum(x_p * l_p)" );    //opción 1 
+			op.setObjectiveFunction("minimize", " l_p *  x_p" );   //opción 2 (traspuesta)
+			
+			
+		//PASO 8 AÑADIR LAS RESTRCCIONES USANDO UN BUCLE FOR CON UNA ITERACION POR DEMANDA (SATISFACER EL TRAFICO DE CADA DEMANDA)
+			
+			for (Demand d: netPlan.getDemands( )) {
+				
+				//PRIMERO NECESITO CONOCES h_d (TRAFICO OFRECIDO POR ESA DEMANDA)
+				
+				double h_d = d.getOfferedTraffic();
+				
+				op.setInputParameter("h_d", h_d);
+				
+				//NECESITAMOS CONOCER P_d --> LOS INDICES EN "x_p" DE LAS RUTAS ASOCIADAS A ESA DEMANDA 
+				
+				
+				op.setInputParameter("P_d", NetPlan.getIndexes(d.getRoutes() ), "row");
+				
+				//YA PODEMOS CREAR LA RESTRICCION PARA ESA DEMANDA 
+				
+				op.addConstraint(" sum (x_p(P_d))== h_d");
+				
+			}
+			
+			
+		//PASO 9 RESTRICCION DE NO SUPERAR LA CAPACIDAD DE LOS ENLACES 
+			
+			for (Link  e: netPlan.getLinks()) {
+				
+				
+				// PRIMERO NECESITO LA CAPCIDAD DEL ENLACE --> PARAMETRO DE ENTRADA
+				
+				op.setInputParameter("u_e", e.getCapacity());
+				
+				//NECESITAMOS P_e  --> INDICES DE x_p 
+				
+				NetPlan.getIndexes(  e.getTraversingRoutes());		
+				
+				op.setInputParameter("P_e", NetPlan.getIndexes(e.getTraversingRoutes()) , "row");
+				
+				//CREAMOS LA RESTRICCION 
+				
+				op.addConstraint(" sum (x_p (P_e) ) <= u_e");
+			}
+			
+		
+		//PASO 10 INVOCAR AL SOLVER 
+			
+			op.solve("glpk");
+			
+		//COMPROBAR SI LA SOLUCION ES OPTIMA 
+			
+			if (op.solutionIsOptimal() == false)
+				throw new Net2PlanException ("La solucion no es optima");
+			
+		//PASO 11 OBTENER SOLUCION PRIMAL 
+			
+		double [] x_p = op.getPrimalSolution("x_p").to1DArray();
+		
+			//LA SOLUCION HAY QUE METERLA EN netPlan
+		
+				// A CADA RUTA HAY QUE ASIGNARLE SU TRÁFICO 
+		
+					for (Route r: netPlan.getRoutes()) {
+						r.setCarriedTraffic(x_p  [r.getIndex()],x_p [r.getIndex()]);
+					}
+			
+				
+	
+		//PASO 12 ELIMINAR LAS RUTAS NO USAFDAS 
+					
+		netPlan.removeAllRoutesUnused(0.001);
+		
+		/* Now you make the things here that modify the NetPlan object: the state of the NetPlan object at the end of this method, is the new network design */
+		
+		
+		
+		return "Ok!" + op.getOptimalCost(); // this is the message that will be shown in the screen at the end of the algorithm
+	}
+
+	/** Returns a description message that will be shown in the graphical user interface
+	 */
+	@Override
+	public String getDescription()
+	{
+		return "Here you should return the algorithm description to be printed by Net2Plan graphical user interface";
+	}
+
+	
+	/** Returns the list of input parameters of the algorithm. For each parameter, you should return a Triple with its name, default value and a description
+	 * @return
+	 */
+	@Override
+	public List<Triple<String, String, String>> getParameters()
+	{
+		final List<Triple<String, String, String>> param = new LinkedList<Triple<String, String, String>> ();
+		//param.add (Triple.of ("firstParamName" , "paramDefaultValue" , "Here put the description of the input parameter. "));
+		param.add (Triple.of ("k" , "10" , "k caminos para cada demanda"));
+		return param;
+		
+	}
+}
